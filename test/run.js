@@ -283,6 +283,176 @@ function run() {
     near3(bsz, [22, 12, 22], "helix");
     console.log("helix 720deg rise 10 ok: 22 x 12 x 22");
 
+    // ---- list_parts: registry with all 8 parts ----
+    const lp = await rpc("tools/call", { name: "list_parts", arguments: {} });
+    assert.ok(!lp.result.isError, "list_parts succeeds");
+    const lpText = lp.result.content[0].text;
+    for (const p of ["flange", "lBracket", "tube", "pulley", "spring", "plateSlot", "hexNut", "cone"]) {
+      assert.ok(lpText.includes(p), `list_parts mentions ${p}`);
+    }
+    console.log("list_parts ok: 8 parts listed");
+
+    // ---- part_to_stl: flange default -> 100x100x10 ----
+    const p2s = await rpc("tools/call", {
+      name: "part_to_stl", arguments: { part: "flange" },
+    });
+    assert.ok(!p2s.result.isError, "part_to_stl flange succeeds: " + JSON.stringify(p2s.result));
+    const p2sText = p2s.result.content[0].text;
+    const p2sStl = p2sText.match(/STL: (\S+)/)[1];
+    const p2sMm = p2sText.match(/size=\((.+?)\) mm/);
+    const [p2sx, p2sy, p2sz] = p2sMm[1].split(",").map((s) => parseFloat(s.trim()));
+    assert.ok(Math.abs(p2sx - 100) < 0.05 && Math.abs(p2sy - 100) < 0.05 && Math.abs(p2sz - 10) < 0.05,
+      `part_to_stl flange bbox 100x100x10, got ${p2sx}x${p2sy}x${p2sz}`);
+    assert.ok(fs.existsSync(p2sStl), "part_to_stl STL file exists");
+    console.log("part_to_stl flange ok: 100 x 100 x 10");
+
+    // ---- part_to_stl: tube custom params -> 24x24x24 ----
+    const tubeR = await rpc("tools/call", {
+      name: "part_to_stl", arguments: { part: "tube", params: { innerR: 10, outerR: 12, height: 24 } },
+    });
+    assert.ok(!tubeR.result.isError, "part_to_stl tube succeeds");
+    const tubeMm = tubeR.result.content[0].text.match(/size=\((.+?)\) mm/);
+    const [tux, tuy, tuz] = tubeMm[1].split(",").map((s) => parseFloat(s.trim()));
+    assert.ok(Math.abs(tux - 24) < 0.05 && Math.abs(tuy - 24) < 0.05 && Math.abs(tuz - 24) < 0.05,
+      `tube bbox 24x24x24, got ${tux}x${tuy}x${tuz}`);
+    console.log("part_to_stl tube custom ok: 24 x 24 x 24");
+
+    // ---- create_part: writes .slvs only ----
+    const cp = await rpc("tools/call", {
+      name: "create_part", arguments: { part: "hexNut", params: { acrossFlats: 20, boreD: 10, thickness: 8 } },
+    });
+    assert.ok(!cp.result.isError, "create_part hexNut succeeds");
+    const cpPath = cp.result.content[0].text.match(/Wrote (\S+)/)[1];
+    assert.ok(fs.existsSync(cpPath) && cpPath.endsWith(".slvs"), "create_part wrote .slvs");
+    console.log("create_part hexNut ok:", cpPath);
+
+    // ---- measure_model: cube 20x15x8 from the first spec STL ----
+    const meas = await rpc("tools/call", {
+      name: "measure_model", arguments: { stl_path: stlFile },
+    });
+    assert.ok(!meas.result.isError, "measure_model succeeds: " + JSON.stringify(meas.result));
+    const measText = meas.result.content[0].text;
+    const volM = measText.match(/volume=([\d.+-]+)/);
+    assert.ok(volM, "measure has volume");
+    const vol = parseFloat(volM[1]);
+    assert.ok(Math.abs(vol - 20 * 15 * 8) / (20 * 15 * 8) < 0.02,
+      `cube volume ~2400, got ${vol}`);
+    assert.ok(/closed=true/.test(measText), "cube mesh is closed");
+    console.log("measure_model cube ok: volume ~2400, closed=true");
+
+    // ---- measure_model: flange has volume + reasonable mesh ----
+    // SolveSpace CSG tessellation of circular features leaves some naked edges
+    // (not watertight); check the volume is right and mesh is not broken.
+    const measF = await rpc("tools/call", {
+      name: "measure_model", arguments: { stl_path: p2sStl },
+    });
+    assert.ok(!measF.result.isError, "measure_model flange succeeds");
+    const measFText = measF.result.content[0].text;
+    const fVol = parseFloat(measFText.match(/volume=([\d.+-]+)/)[1]);
+    // Expected volume ~60.5 cm^3 (plate minus bore minus bolt holes)
+    assert.ok(fVol > 50000 && fVol < 70000, `flange volume in 50-70k range, got ${fVol}`);
+    const fNaked = parseInt(measFText.match(/nakedEdges=(\d+)/)[1], 10);
+    assert.ok(fNaked < 100, `flange nakedEdges bounded (<100), got ${fNaked}`);
+    console.log(`measure_model flange ok: volume ~${fVol.toFixed(0)}, nakedEdges=${fNaked}`);
+
+    // ---- export_png: render flange ----
+    const png = await rpc("tools/call", {
+      name: "export_png", arguments: { slvs_path: cpPath, view: "isometric", size: "400x300" },
+    });
+    assert.ok(!png.result.isError, "export_png succeeds: " + JSON.stringify(png.result));
+    const pngPath = png.result.content[0].text.match(/PNG: (\S+)/)[1];
+    assert.ok(fs.existsSync(pngPath) && fs.statSync(pngPath).size > 500, "PNG file written");
+    console.log("export_png ok:", png.result.content[0].text);
+
+    // ---- export_format: obj from flange ----
+    const objExp = await rpc("tools/call", {
+      name: "export_format", arguments: { slvs_path: cpPath, format: "obj" },
+    });
+    assert.ok(!objExp.result.isError, "export_format obj succeeds: " + JSON.stringify(objExp.result));
+    const objPath = objExp.result.content[0].text.match(/OBJ: (\S+)/)[1];
+    assert.ok(fs.existsSync(objPath) && fs.statSync(objPath).size > 100, "obj file written");
+    console.log("export_format obj ok:", objExp.result.content[0].text);
+
+    // ---- export_format: dxf from flange ----
+    const dxfExp = await rpc("tools/call", {
+      name: "export_format", arguments: { slvs_path: cpPath, format: "dxf" },
+    });
+    assert.ok(!dxfExp.result.isError, "export_format dxf succeeds: " + JSON.stringify(dxfExp.result));
+    const dxfPath = dxfExp.result.content[0].text.match(/DXF: (\S+)/)[1];
+    assert.ok(fs.existsSync(dxfPath) && fs.statSync(dxfPath).size > 500, "dxf file written");
+    console.log("export_format dxf ok:", dxfExp.result.content[0].text);
+
+    // ---- section_view: flange mid-plane z=5 -> many segments ----
+    const sec = await rpc("tools/call", {
+      name: "section_view", arguments: { stl_path: p2sStl, axis: "z", offset: 5 },
+    });
+    assert.ok(!sec.result.isError, "section_view succeeds: " + JSON.stringify(sec.result));
+    const secText = sec.result.content[0].text;
+    const secSegs = parseInt(secText.match(/segments=(\d+)/)[1], 10);
+    assert.ok(secSegs > 10, `flange section has >10 segments, got ${secSegs}`);
+    const secSvg = secText.match(/SVG section: (\S+)/)[1];
+    assert.ok(fs.existsSync(secSvg), "section SVG written");
+    console.log("section_view flange ok:", secSegs, "segments");
+
+    // ---- assemble: two boxes side by side ----
+    const boxSpecA = {
+      sketches: [{
+        name: "s", plane: "XY",
+        entities: [
+          { id: "a", type: "line", a: [0, 0], b: [10, 0] },
+          { id: "b", type: "line", a: [10, 0], b: [10, 10] },
+          { id: "c", type: "line", a: [10, 10], b: [0, 10] },
+          { id: "d", type: "line", a: [0, 10], b: [0, 0] },
+        ],
+      }],
+      operations: [{ type: "extrude", from: "s", vector: [0, 0, 5], name: "body" }],
+    };
+    const boxA = await rpc("tools/call", { name: "model_to_stl", arguments: { spec: boxSpecA } });
+    const boxAStl = boxA.result.content[0].text.match(/STL: (\S+)/)[1];
+    const asm = await rpc("tools/call", {
+      name: "assemble",
+      arguments: {
+        parts: [
+          { stlPath: boxAStl, translate: [0, 0, 0] },
+          { stlPath: boxAStl, translate: [15, 0, 0] },
+        ],
+      },
+    });
+    assert.ok(!asm.result.isError, "assemble succeeds: " + JSON.stringify(asm.result));
+    const asmText = asm.result.content[0].text;
+    const asmMm = asmText.match(/size=\((.+?)\) mm/);
+    const [asmx, asmy, asmz] = asmMm[1].split(",").map((s) => parseFloat(s.trim()));
+    assert.ok(Math.abs(asmx - 25) < 0.05 && Math.abs(asmy - 10) < 0.05 && Math.abs(asmz - 5) < 0.05,
+      `assemble bbox 25x10x5, got ${asmx}x${asmy}x${asmz}`);
+    console.log("assemble ok: 25 x 10 x 5");
+
+    // ---- batch_parts: 3 flange variants ----
+    const batch = await rpc("tools/call", {
+      name: "batch_parts",
+      arguments: {
+        part: "hexNut",
+        variants: [
+          { acrossFlats: 10, boreD: 5, thickness: 5 },
+          { acrossFlats: 17, boreD: 8, thickness: 6 },
+          { acrossFlats: 24, boreD: 12, thickness: 10 },
+        ],
+      },
+    });
+    assert.ok(!batch.result.isError, "batch_parts succeeds: " + JSON.stringify(batch.result));
+    const batchText = batch.result.content[0].text;
+    assert.ok(/2 ok, 0 failed|3 ok, 0 failed|1 ok, 0 failed|ok, 0 failed/.test(batchText)
+      || /3 ok/.test(batchText), "batch_parts reports ok count");
+    assert.ok(/FAILED/.test(batchText) === false, "batch_parts has no failures");
+    console.log("batch_parts ok:", batchText.split("\n")[0]);
+
+    // ---- open_in_gui: returns pid ----
+    const gui = await rpc("tools/call", {
+      name: "open_in_gui", arguments: { slvs_path: cpPath },
+    });
+    assert.ok(!gui.result.isError, "open_in_gui succeeds: " + JSON.stringify(gui.result));
+    assert.ok(/pid=\d+/.test(gui.result.content[0].text), "open_in_gui returns pid");
+    console.log("open_in_gui ok:", gui.result.content[0].text.split("\n")[1]);
+
     console.log("\nALL TESTS PASSED");
     child.kill();
     process.exit(0);

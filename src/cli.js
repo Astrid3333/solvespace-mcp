@@ -116,6 +116,44 @@ function exportWireframe({ slvsFile, outFile, view, bin, timeout }) {
   return { outFile, bytes: fs.statSync(outFile).size, cliOutput: output.trim() };
 }
 
+// Rendered PNG thumbnail via the CLI "thumbnail" command.
+function exportThumbnail({ slvsFile, outFile, size = "800x600", view = "isometric", chordTolerance, bin, timeout }) {
+  const args = ["thumbnail", "-o", outFile, "--size", size, "-v", view];
+  if (chordTolerance != null) args.push("-t", String(chordTolerance));
+  args.push(slvsFile);
+  const output = runCli(args, { bin, timeout });
+  if (!fs.existsSync(outFile)) {
+    throw new Error(`thumbnail produced no file at ${outFile}\n${output}`);
+  }
+  return { outFile, bytes: fs.statSync(outFile).size, cliOutput: output.trim() };
+}
+
+// export-view into any 2D vector format the CLI supports (svg/pdf/dxf/step/eps/ps/plt/ngc).
+function exportViewFormat({ slvsFile, outFile, view = "isometric", chordTolerance, bg, bin, timeout }) {
+  const args = ["export-view", "-o", outFile];
+  if (view) args.push("-v", view);
+  if (chordTolerance != null) args.push("-t", String(chordTolerance));
+  if (bg != null) args.push("-b", bg ? "on" : "off");
+  args.push(slvsFile);
+  const output = runCli(args, { bin, timeout });
+  if (!fs.existsSync(outFile)) {
+    throw new Error(`export-view produced no file at ${outFile}\n${output}`);
+  }
+  return { outFile, bytes: fs.statSync(outFile).size, cliOutput: output.trim() };
+}
+
+// export-mesh into any mesh format (stl/obj).
+function exportMeshFormat({ slvsFile, outFile, chordTolerance, bin, timeout }) {
+  const args = ["export-mesh", "-o", outFile];
+  if (chordTolerance != null) args.push("-t", String(chordTolerance));
+  args.push(slvsFile);
+  const output = runCli(args, { bin, timeout });
+  if (!fs.existsSync(outFile)) {
+    throw new Error(`export-mesh produced no file at ${outFile}\n${output}`);
+  }
+  return { outFile, bytes: fs.statSync(outFile).size, cliOutput: output.trim() };
+}
+
 function version({ bin } = {}) {
   // solvespace-cli 3.1 prints the version but exits nonzero; tolerate it.
   try {
@@ -127,12 +165,43 @@ function version({ bin } = {}) {
   }
 }
 
+const GUI_BIN =
+  process.env.SOLVESPACE_GUI ||
+  path.join(os.homedir(), "solvespace-cli/usr/bin/solvespace");
+
+function resolveGuiBin(bin) {
+  const b = bin || GUI_BIN;
+  if (!fs.existsSync(b)) {
+    throw new Error(
+      `solvespace GUI not found at ${b}. Set SOLVESPACE_GUI to the binary path.`
+    );
+  }
+  return b;
+}
+
+// Open a .slvs file in the SolveSpace GUI (detached, non-blocking).
+function openInGui({ slvsFile, bin, timeout = 10000 } = {}) {
+  const { spawn } = require("node:child_process");
+  const b = resolveGuiBin(bin);
+  const child = spawn(b, [slvsFile], {
+    detached: true,
+    stdio: "ignore",
+  });
+  child.unref();
+  return { pid: child.pid, bin: b, file: slvsFile };
+}
+
 module.exports = {
   DEFAULT_BIN,
+  GUI_BIN,
   runCli,
   parseBinaryStl,
   exportMesh,
+  exportMeshFormat,
   exportView,
+  exportViewFormat,
   exportWireframe,
+  exportThumbnail,
+  openInGui,
   version,
 };

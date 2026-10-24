@@ -265,3 +265,101 @@ function cone(p = {}) {
 }
 
 module.exports = { flange, lBracket, tube, pulley, spring, plateSlot, hexNut, cone, buildSlvs };
+
+// --- registry for list_parts / create_part ---
+const PART_REGISTRY = {
+  flange: {
+    fn: flange,
+    title: "Flange",
+    description: "Circular plate with central bore and N bolt holes on a bolt circle.",
+    params: {
+      outerD: { default: 100, min: 10, max: 1000, desc: "Outer diameter (mm)" },
+      boreD: { default: 40, min: 1, max: 900, desc: "Central bore diameter (mm)" },
+      boltCircleD: { default: 70, min: 5, max: 950, desc: "Bolt circle diameter (mm)" },
+      boltD: { default: 10, min: 1, max: 100, desc: "Bolt hole diameter (mm)" },
+      nBolts: { default: 6, min: 3, max: 36, desc: "Number of bolt holes" },
+      thickness: { default: 10, min: 1, max: 200, desc: "Plate thickness (mm)" },
+    },
+  },
+  lBracket: {
+    fn: lBracket,
+    title: "L-Bracket",
+    description: "L-shaped bracket: vertical + horizontal leg, extruded along Z.",
+    params: {
+      width: { default: 60, min: 5, max: 500, desc: "Overall width (mm)" },
+      height: { default: 40, min: 5, max: 500, desc: "Overall height (mm)" },
+      leg: { default: 8, min: 1, max: 100, desc: "Leg thickness (mm)" },
+      depth: { default: 30, min: 1, max: 500, desc: "Extrusion depth (mm)" },
+    },
+  },
+  tube: {
+    fn: tube,
+    title: "Tube / Spacer",
+    description: "Hollow cylinder (lathe of rectangular profile offset from axis).",
+    params: {
+      innerR: { default: 8, min: 0.5, max: 400, desc: "Inner radius (mm)" },
+      outerR: { default: 12, min: 1, max: 500, desc: "Outer radius (mm)" },
+      height: { default: 20, min: 1, max: 500, desc: "Height (mm)" },
+    },
+  },
+  pulley: {
+    fn: pulley,
+    title: "Pulley Blank",
+    description: "Stepped lathe profile: wide rim + narrower hub.",
+    params: {
+      rimR: { default: 30, min: 2, max: 500, desc: "Rim radius (mm)" },
+      hubR: { default: 12, min: 1, max: 400, desc: "Hub radius (mm)" },
+      boreR: { default: 5, min: 0, max: 300, desc: "Bore radius (mm, 0 = solid)" },
+      rimW: { default: 10, min: 1, max: 300, desc: "Rim width (mm)" },
+      hubW: { default: 20, min: 1, max: 400, desc: "Hub width (mm)" },
+    },
+  },
+  spring: {
+    fn: spring,
+    title: "Coil Spring",
+    description: "Helical spring of circular wire cross-section.",
+    params: {
+      coilR: { default: 15, min: 2, max: 300, desc: "Coil radius (mm)" },
+      wireR: { default: 2, min: 0.5, max: 50, desc: "Wire radius (mm)" },
+      coils: { default: 5, min: 1, max: 50, desc: "Number of coils" },
+      pitch: { default: 8, min: 1, max: 100, desc: "Axial pitch per coil (mm)" },
+    },
+  },
+  plateSlot: {
+    fn: plateSlot,
+    title: "Plate with Slot",
+    description: "Rounded-rect plate with a central elongated slot cutout.",
+    params: {
+      w: { default: 80, min: 10, max: 500, desc: "Width (mm)" },
+      h: { default: 40, min: 10, max: 500, desc: "Height (mm)" },
+      cornerR: { default: 8, min: 0, max: 100, desc: "Corner radius (mm, 0 = sharp)" },
+      slotL: { default: 30, min: 2, max: 400, desc: "Slot length (mm)" },
+      slotW: { default: 8, min: 1, max: 100, desc: "Slot width (mm)" },
+      thickness: { default: 6, min: 0.5, max: 100, desc: "Plate thickness (mm)" },
+    },
+  },
+  hexNut: {
+    fn: hexNut,
+    title: "Hex Nut",
+    description: "Hexagonal prism with central bore.",
+    params: {
+      acrossFlats: { default: 20, min: 3, max: 300, desc: "Width across flats (mm)" },
+      boreD: { default: 10, min: 0.5, max: 200, desc: "Bore diameter (mm)" },
+      thickness: { default: 8, min: 1, max: 100, desc: "Thickness (mm)" },
+    },
+  },
+  cone: {
+    fn: cone,
+    title: "Cone / Funnel",
+    description: "Lathe of a trapezoidal profile (optionally hollow with wall).",
+    params: {
+      baseR: { default: 25, min: 2, max: 500, desc: "Base radius (mm)" },
+      topR: { default: 8, min: 0, max: 400, desc: "Top radius (mm)" },
+      height: { default: 30, min: 1, max: 500, desc: "Height (mm)" },
+      wall: { default: 0, min: 0, max: 100, desc: "Wall thickness (mm, 0 = solid)" },
+    },
+  },
+};
+
+module.exports.PART_REGISTRY = PART_REGISTRY;
+module.exports.partNames = Object.keys(PART_REGISTRY);
