@@ -1,0 +1,20 @@
+{
+  "name": "solvespace-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for SolveSpace CLI parametric CAD",
+  "main": "src/index.js",
+  "bin": {
+    "solvespace-mcp": "src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node test/run.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "zod": "^3.24.0"
+  }
+}
