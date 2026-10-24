@@ -72,7 +72,15 @@ function fmtF(x) {
   return Number(x).toFixed(20);
 }
 
-// ---- tiny arithmetic evaluator for named params: numbers, names, + - * / ( ) ----
+// ---- arithmetic evaluator for named params: numbers, names, + - * / ( ), funcs ----
+const MATH_FUNCS = {
+  sin: Math.sin, cos: Math.cos, tan: Math.tan,
+  sqrt: Math.sqrt, abs: Math.abs, min: Math.min, max: Math.max,
+  atan2: Math.atan2, floor: Math.floor, ceil: Math.ceil, round: Math.round,
+  pow: Math.pow, log: Math.log, exp: Math.exp,
+};
+const MATH_CONSTS = { pi: Math.PI, tau: Math.PI * 2, e: Math.E };
+
 function evalExpr(expr, vars) {
   if (typeof expr === "number") return expr;
   const s = String(expr).trim();
@@ -128,8 +136,26 @@ function evalExpr(expr, vars) {
       const m = /^[a-zA-Z_][a-zA-Z0-9_]*/.exec(s.slice(i));
       i += m[0].length;
       const name = m[0];
-      if (!(name in vars)) throw new Error(`unknown param "${name}"`);
-      return vars[name];
+      // function call: name(args)
+      skipWs();
+      if (peek() === "(") {
+        const fn = MATH_FUNCS[name];
+        if (!fn) throw new Error(`unknown function "${name}"`);
+        i++; // consume (
+        const args = [parseExpr()];
+        skipWs();
+        while (peek() === ",") {
+          i++;
+          args.push(parseExpr());
+          skipWs();
+        }
+        if (peek() !== ")") throw new Error(`expected ) after args of ${name} at ${i}`);
+        i++;
+        return fn(...args);
+      }
+      if (name in MATH_CONSTS) return MATH_CONSTS[name];
+      if (name in vars) return vars[name];
+      throw new Error(`unknown param "${name}"`);
     }
     throw new Error(`unexpected '${c}' at ${i} in "${s}"`);
   }
