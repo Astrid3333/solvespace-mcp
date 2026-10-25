@@ -8,7 +8,7 @@ solid operations — and export STL / SVG / PNG without opening the GUI.
 JSON spec  ->  .slvs (SolveSpace source)  ->  solvespace-cli  ->  STL / SVG / PNG
 ```
 
-- 14 MCP tools, 9 ready-made parametric parts, boolean ops (union /
+- 14 MCP tools, 10 ready-made parametric parts, boolean ops (union /
   difference / intersection), watertight-mesh validation on export.
 - Units are **millimetres** everywhere.
 
@@ -55,7 +55,7 @@ Register in `opencode.json`:
 | `create_part` | library part -> `.slvs` |
 | `part_to_stl` | library part -> STL in one step |
 | `batch_parts` | same part, N parameter sets, one call |
-| `list_parts` | the 9 library parts with params, defaults and bounds |
+| `list_parts` | the 10 library parts with params, defaults and bounds |
 | `assemble` | merge several STLs with per-part translate/rotate |
 | `open_in_gui` | open a `.slvs` in the SolveSpace GUI |
 | `solvespace_version` | CLI version in use |
@@ -110,6 +110,7 @@ Known planes: `XY`, `YZ`, `ZX` (or a custom quaternion).
 | `hexNut` | acrossFlats=20, boreD=10, thickness=8 |
 | `cone` | baseR=25, topR=8, height=30, wall=0 (lathe) |
 | `drilledPlate` | w=60, h=40, thickness=8, holeD=6, margin=7, nHolesX=2, nHolesY=2 (boolean grid) |
+| `gear` | teeth=24, module=2, thickness=8, boreD=10, hubD=26, rimW=4, nSpokes=5, nRivets=6, rivetD=4 (involute, boolean) |
 
 ## Examples
 
@@ -135,7 +136,7 @@ determinism, measurements, exports. Asserts watertightness
 ```
 src/index.js     MCP server, 14 tool registrations
 src/slvs.js      JSON spec -> .slvs binary writer
-src/parts.js     9 parametric part generators
+src/parts.js     10 parametric part generators
 src/cli.js       solvespace-cli wrappers (export/render, -t tolerance)
 src/measure.js   STL reader + volume/area/watertightness (weld at 1e-6)
 src/stlmerge.js  STL merge with transforms, weld, binary writer

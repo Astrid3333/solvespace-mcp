@@ -314,7 +314,137 @@ function drilledPlate(p = {}) {
   };
 }
 
-module.exports = { flange, lBracket, tube, pulley, spring, plateSlot, hexNut, cone, drilledPlate, buildSlvs };
+
+/**
+ * Steampunk gear: sampled involute tooth profile, solid hub, kidney-shaped
+ * spoke cutouts and rivet holes around the bore. Single closed polygon is
+ * extruded; holes are cut with a symmetric difference (watertight pattern).
+ */
+function gear(p = {}) {
+  const {
+    teeth = 24, module: m = 2, thickness = 8, boreD = 10, hubD = 26,
+    rimW = 4, nSpokes = 5, nRivets = 6, rivetD = 4,
+  } = p;
+  const N = Math.max(12, Math.round(teeth));
+  const alpha = (20 * Math.PI) / 180; // pressure angle
+  const rp = (m * N) / 2;             // pitch radius
+  const rb = rp * Math.cos(alpha);    // base radius
+  let ra = rp + m;                    // tip radius (addendum = m)
+  const rf = rp - 1.25 * m;           // root radius (dedendum = 1.25m)
+  const boreR = boreD / 2;
+  const hubR = hubD / 2;
+  if (rf <= boreR + 2) {
+    throw new Error(
+      `gear: root radius ${rf.toFixed(2)} must exceed bore/2+2 = ${(boreR + 2).toFixed(2)}; ` +
+      `increase module/teeth or reduce boreD`
+    );
+  }
+
+  // inv(a) = tan(a) - a; flank angular half-width at radius r (r >= rb):
+  // delta + inv(alpha_pitch) - inv(alpha_r), delta = pi/(2N) at pitch circle.
+  const inv = (x) => Math.tan(x) - x;
+  const invP = inv(alpha);
+  const halfPitch = Math.PI / (2 * N);
+  const flankAt = (r) => halfPitch + invP - inv(Math.acos(Math.min(1, rb / r)));
+  // pointed-tip guard: shrink addendum until the tip has width
+  while (ra > rp + 1e-9 && flankAt(ra) <= 0.005) ra -= 0.05 * m;
+
+  const pts = [];
+  const push = (r, a) => pts.push([r * Math.cos(a), r * Math.sin(a)]);
+  const K = 6; // involute samples per flank
+  for (let k = 0; k < N; k++) {
+    const c = (k * 2 * Math.PI) / N;
+    const aLb = c - flankAt(rb);
+    const aRb = c + flankAt(rb);
+    push(rf, aLb);            // radial up the left flank
+    push(rb, aLb);
+    for (let i = 1; i <= K; i++) {
+      const r = rb + ((ra - rb) * i) / K;
+      push(r, c - flankAt(r)); // left involute (root -> tip)
+    }
+    push(ra, c);               // tooth tip midpoint
+    for (let i = K; i >= 1; i--) {
+      const r = rb + ((ra - rb) * i) / K;
+      push(r, c + flankAt(r)); // right involute (tip -> root)
+    }
+    push(rb, aRb);
+    push(rf, aRb);            // radial down
+    push(rf, (aRb + c + (2 * Math.PI) / N - flankAt(rb)) / 2); // root gap mid
+  }
+
+  // --- cuts: bore + kidney spokes + rivets ---
+  const cuts = [{ id: "bore", type: "circle", center: [0, 0], r: boreR }];
+  const ri = hubR + 1;         // spoke inner radius (1 mm clearance off hub)
+  const ro = rf - rimW;        // spoke outer radius
+  const nS = Math.max(0, Math.round(nSpokes));
+  if (nS > 0 && ro - ri >= 2) {
+    const rmid = (ri + ro) / 2;
+    const rc = (ro - ri) / 2;  // cap radius
+    const span = (40 * Math.PI) / 180; // angular span of slot body
+    const capP = (C, er, et, bulge, psi) => [
+      C[0] + rc * (Math.cos(psi) * er[0] + bulge * Math.sin(psi) * et[0]),
+      C[1] + rc * (Math.cos(psi) * er[1] + bulge * Math.sin(psi) * et[1]),
+    ];
+    for (let s = 0; s < nS; s++) {
+      const a0 = (s * 2 * Math.PI) / nS;
+      const t1 = a0 - span / 2, t2 = a0 + span / 2;
+      const kp = [];
+      for (let i = 0; i <= 6; i++) { // outer arc t1 -> t2
+        const a = t1 + (span * i) / 6;
+        kp.push([ro * Math.cos(a), ro * Math.sin(a)]);
+      }
+      // end cap at t2: semicircle center on rmid, bulging toward +angle
+      {
+        const er = [Math.cos(t2), Math.sin(t2)];
+        const et = [-Math.sin(t2), Math.cos(t2)];
+        const C = [rmid * er[0], rmid * er[1]];
+        for (let i = 1; i <= 3; i++) kp.push(capP(C, er, et, 1, (Math.PI * i) / 4));
+      }
+      for (let i = 6; i >= 0; i--) { // inner arc t2 -> t1
+        const a = t1 + (span * i) / 6;
+        kp.push([ri * Math.cos(a), ri * Math.sin(a)]);
+      }
+      // start cap at t1: from psi=pi (inner) back to psi=0 (outer), bulge -angle
+      {
+        const er = [Math.cos(t1), Math.sin(t1)];
+        const et = [-Math.sin(t1), Math.cos(t1)];
+        const C = [rmid * er[0], rmid * er[1]];
+        for (let i = 3; i >= 1; i--) kp.push(capP(C, er, et, -1, (Math.PI * i) / 4));
+      }
+      cuts.push(...polygonLines(kp, `s${s}_`));
+    }
+  }
+  const nR = Math.max(0, Math.round(nRivets));
+  const rr = (boreR + hubR) / 2;
+  const rvr = rivetD / 2;
+  if (nR > 0 && rr + rvr < hubR - 0.5 && rr - rvr > boreR + 0.5) {
+    for (let k = 0; k < nR; k++) {
+      const a = (k * 2 * Math.PI) / nR + Math.PI / nR;
+      cuts.push({
+        id: `r${k}`, type: "circle",
+        center: [rr * Math.cos(a), rr * Math.sin(a)], r: rvr,
+      });
+    }
+  }
+
+  return {
+    name: "gear",
+    params: { teeth: N, module: m, thickness, boreD, hubD, rimW, nSpokes: nS, nRivets: nR, rivetD },
+    sketches: [
+      { name: "profile", plane: "XY", entities: polygonLines(pts) },
+      { name: "cuts", plane: "XY", entities: cuts },
+    ],
+    operations: [
+      { type: "extrude", from: "profile", vector: [0, 0, "thickness"], name: "solid" },
+      {
+        type: "extrude", from: "cuts", vector: [0, 0, "thickness * 2 + 4"],
+        symmetric: true, combine: "difference", name: "cuts",
+      },
+    ],
+  };
+}
+
+module.exports = { flange, lBracket, tube, pulley, spring, plateSlot, hexNut, cone, drilledPlate, gear, buildSlvs };
 
 // --- registry for list_parts / create_part ---
 const PART_REGISTRY = {
@@ -423,6 +553,24 @@ const PART_REGISTRY = {
       margin: { default: 7, min: 0.5, max: 250, desc: "Hole center offset from edges (mm)" },
       nHolesX: { default: 2, min: 1, max: 20, desc: "Holes along X" },
       nHolesY: { default: 2, min: 1, max: 20, desc: "Holes along Y" },
+    },
+  },
+  gear: {
+    fn: gear,
+    title: "Gear (Steampunk)",
+    description:
+      "Spur gear with sampled involute teeth (20 deg pressure angle), solid hub, " +
+      "kidney-shaped spoke cutouts and rivet holes around the bore.",
+    params: {
+      teeth: { default: 24, min: 12, max: 48, desc: "Number of teeth" },
+      module: { default: 2, min: 0.5, max: 8, desc: "Gear module (mm; pitch D = module * teeth)" },
+      thickness: { default: 8, min: 2, max: 30, desc: "Face width / extrusion (mm)" },
+      boreD: { default: 10, min: 3, max: 100, desc: "Central bore diameter (mm)" },
+      hubD: { default: 26, min: 6, max: 200, desc: "Hub diameter (mm)" },
+      rimW: { default: 4, min: 2, max: 10, desc: "Rim width (mm; spoke outer edge = root - rimW)" },
+      nSpokes: { default: 5, min: 0, max: 8, desc: "Kidney spoke cutouts (0 = solid)" },
+      nRivets: { default: 6, min: 0, max: 12, desc: "Rivet holes in hub (0 = none)" },
+      rivetD: { default: 4, min: 1, max: 10, desc: "Rivet hole diameter (mm)" },
     },
   },
 };

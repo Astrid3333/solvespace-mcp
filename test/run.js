@@ -287,10 +287,10 @@ function run() {
     const lp = await rpc("tools/call", { name: "list_parts", arguments: {} });
     assert.ok(!lp.result.isError, "list_parts succeeds");
     const lpText = lp.result.content[0].text;
-    for (const p of ["flange", "lBracket", "tube", "pulley", "spring", "plateSlot", "hexNut", "cone", "drilledPlate"]) {
+    for (const p of ["flange", "lBracket", "tube", "pulley", "spring", "plateSlot", "hexNut", "cone", "drilledPlate", "gear"]) {
       assert.ok(lpText.includes(p), `list_parts mentions ${p}`);
     }
-    console.log("list_parts ok: 9 parts listed");
+    console.log("list_parts ok: 10 parts listed");
 
     // ---- part_to_stl: flange default -> 100x100x10 ----
     const p2s = await rpc("tools/call", {
@@ -463,6 +463,44 @@ function run() {
     assert.strictEqual(dpNaked, 0, `drilledPlate boolean mesh watertight, nakedEdges=0, got ${dpNaked}`);
     assert.ok(/closed=true/.test(dpText), "drilledPlate mesh closed");
     console.log(`boolean drilledPlate ok: volume ~${dpVol.toFixed(0)}, nakedEdges=0, closed=true`);
+
+    // ---- gear: involute teeth + kidney spokes + rivets, watertight ----
+    const gR = await rpc("tools/call", {
+      name: "part_to_stl", arguments: { part: "gear" },
+    });
+    assert.ok(!gR.result.isError, "part_to_stl gear succeeds: " + JSON.stringify(gR.result));
+    const gText = gR.result.content[0].text;
+    const gStl = gText.match(/STL: (\S+)/)[1];
+    const gMm = gText.match(/size=\((.+?)\) mm/);
+    const [gx, gy, gz] = gMm[1].split(",").map((s) => parseFloat(s.trim()));
+    // tip circle = 2*(m*N/2 + m) = 52 mm, face width 8 mm (2% tolerance)
+    assert.ok(Math.abs(gx - 52) <= 1.04 && Math.abs(gy - 52) <= 1.04 && Math.abs(gz - 8) < 0.05,
+      `gear bbox ~52x52x8, got ${gx}x${gy}x${gz}`);
+    assert.ok(fs.existsSync(gStl), "gear STL file exists");
+    const gM = await rpc("tools/call", { name: "measure_model", arguments: { stl_path: gStl } });
+    assert.ok(!gM.result.isError, "measure_model gear succeeds");
+    const gMText = gM.result.content[0].text;
+    const gVol = parseFloat(gMText.match(/volume=([\d.+-]+)/)[1]);
+    const gNaked = parseInt(gMText.match(/nakedEdges=(\d+)/)[1], 10);
+    // disk to root circle = pi*21.5^2*8 = 11614 mm^3; teeth add, 5 kidney
+    // slots + 6 rivets remove. Measured 11112 -> band 8000..15000.
+    assert.ok(gVol > 8000 && gVol < 15000, `gear volume in [8000,15000], got ${gVol}`);
+    assert.strictEqual(gNaked, 0, `gear watertight, nakedEdges=0, got ${gNaked}`);
+    assert.ok(/closed=true/.test(gMText), "gear mesh closed");
+    console.log(`gear ok: 52x52x8, volume ~${gVol.toFixed(0)}, nakedEdges=0, closed=true`);
+
+    // ---- batch_parts: 2 gear variants ----
+    const gB = await rpc("tools/call", {
+      name: "batch_parts",
+      arguments: {
+        part: "gear",
+        variants: [{ teeth: 24, module: 2 }, { teeth: 36, module: 1.5 }],
+      },
+    });
+    assert.ok(!gB.result.isError, "batch_parts gear succeeds: " + JSON.stringify(gB.result));
+    const gBText = gB.result.content[0].text;
+    assert.ok(/2 ok, 0 failed/.test(gBText), `gear batch 2 ok, 0 failed, got: ${gBText.split("\n")[0]}`);
+    console.log("batch_parts gear ok:", gBText.split("\n")[0]);
 
     // ---- boolean difference from a raw spec: plate 40x40x10 minus r=8 hole ----
     const boolSpec = {
