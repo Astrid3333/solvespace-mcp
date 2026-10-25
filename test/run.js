@@ -287,10 +287,10 @@ function run() {
     const lp = await rpc("tools/call", { name: "list_parts", arguments: {} });
     assert.ok(!lp.result.isError, "list_parts succeeds");
     const lpText = lp.result.content[0].text;
-    for (const p of ["flange", "lBracket", "tube", "pulley", "spring", "plateSlot", "hexNut", "cone"]) {
+    for (const p of ["flange", "lBracket", "tube", "pulley", "spring", "plateSlot", "hexNut", "cone", "drilledPlate"]) {
       assert.ok(lpText.includes(p), `list_parts mentions ${p}`);
     }
-    console.log("list_parts ok: 8 parts listed");
+    console.log("list_parts ok: 9 parts listed");
 
     // ---- part_to_stl: flange default -> 100x100x10 ----
     const p2s = await rpc("tools/call", {
@@ -444,6 +444,77 @@ function run() {
       || /3 ok/.test(batchText), "batch_parts reports ok count");
     assert.ok(/FAILED/.test(batchText) === false, "batch_parts has no failures");
     console.log("batch_parts ok:", batchText.split("\n")[0]);
+
+    // ---- boolean difference: drilled_plate is watertight (combine=difference) ----
+    const dp = await rpc("tools/call", {
+      name: "part_to_stl", arguments: { part: "drilledPlate" },
+    });
+    assert.ok(!dp.result.isError, "part_to_stl drilledPlate succeeds: " + JSON.stringify(dp.result));
+    const dpStl = dp.result.content[0].text.match(/STL: (\S+)/)[1];
+    const dpM = await rpc("tools/call", { name: "measure_model", arguments: { stl_path: dpStl } });
+    assert.ok(!dpM.result.isError, "measure_model drilledPlate succeeds");
+    const dpText = dpM.result.content[0].text;
+    const dpVol = parseFloat(dpText.match(/volume=([\d.+-]+)/)[1]);
+    // 60*40*8 - 4*pi*3^2*8 = 19200 - 904.78 = 18295.2 (circle tessellation adds <1%)
+    assert.ok(dpVol > 18000 && dpVol < 18600, `drilledPlate volume ~18295, got ${dpVol}`);
+    const dpNaked = parseInt(dpText.match(/nakedEdges=(\d+)/)[1], 10);
+    assert.strictEqual(dpNaked, 0, `drilledPlate boolean mesh watertight, nakedEdges=0, got ${dpNaked}`);
+    assert.ok(/closed=true/.test(dpText), "drilledPlate mesh closed");
+    console.log(`boolean drilledPlate ok: volume ~${dpVol.toFixed(0)}, nakedEdges=0, closed=true`);
+
+    // ---- boolean difference from a raw spec: plate 40x40x10 minus r=8 hole ----
+    const boolSpec = {
+      sketches: [
+        {
+          name: "plate", plane: "XY",
+          entities: [
+            { id: "a", type: "line", a: [0, 0], b: [40, 0] },
+            { id: "b", type: "line", a: [40, 0], b: [40, 40] },
+            { id: "c", type: "line", a: [40, 40], b: [0, 40] },
+            { id: "d", type: "line", a: [0, 40], b: [0, 0] },
+          ],
+        },
+        { name: "hole", plane: "XY", entities: [{ id: "hc", type: "circle", center: [20, 20], r: 8 }] },
+      ],
+      operations: [
+        { type: "extrude", from: "plate", vector: [0, 0, 10], name: "body" },
+        { type: "extrude", from: "hole", vector: [0, 0, 20], symmetric: true, combine: "difference", name: "cut" },
+      ],
+    };
+    const boolR = await rpc("tools/call", { name: "model_to_stl", arguments: { spec: boolSpec } });
+    assert.ok(!boolR.result.isError, "boolean spec model_to_stl succeeds: " + JSON.stringify(boolR.result));
+    const boolStl = boolR.result.content[0].text.match(/STL: (\S+)/)[1];
+    const boolM = await rpc("tools/call", { name: "measure_model", arguments: { stl_path: boolStl } });
+    const boolText = boolM.result.content[0].text;
+    const boolVol = parseFloat(boolText.match(/volume=([\d.+-]+)/)[1]);
+    // 40*40*10 - pi*8^2*10 = 16000 - 2010.62 = 13989.38
+    assert.ok(Math.abs(boolVol - 13989.38) / 13989.38 < 0.02,
+      `plate-hole volume ~13989, got ${boolVol}`);
+    assert.strictEqual(parseInt(boolText.match(/nakedEdges=(\d+)/)[1], 10), 0,
+      "plate-hole mesh watertight");
+    console.log(`boolean plate+hole ok: volume ~${boolVol.toFixed(0)}, nakedEdges=0`);
+
+    // ---- combine on step-and-repeat must be rejected ----
+    const badSpec = {
+      sketches: [
+        {
+          name: "s", plane: "XY",
+          entities: [
+            { id: "a", type: "line", a: [0, 0], b: [10, 0] },
+            { id: "b", type: "line", a: [10, 0], b: [10, 10] },
+            { id: "c", type: "line", a: [10, 10], b: [0, 10] },
+            { id: "d", type: "line", a: [0, 10], b: [0, 0] },
+          ],
+        },
+      ],
+      operations: [
+        { type: "extrude", from: "s", vector: [0, 0, 5], name: "e" },
+        { type: "translate", from: "e", vector: [15, 0, 0], copies: 3, combine: "difference" },
+      ],
+    };
+    const badR = await rpc("tools/call", { name: "model_to_stl", arguments: { spec: badSpec } });
+    assert.ok(badR.result.isError, "combine on translate rejected");
+    console.log("boolean validation ok: combine on translate rejected");
 
     // ---- open_in_gui: returns pid ----
     const gui = await rpc("tools/call", {

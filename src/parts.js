@@ -264,7 +264,53 @@ function cone(p = {}) {
   };
 }
 
-module.exports = { flange, lBracket, tube, pulley, spring, plateSlot, hexNut, cone, buildSlvs };
+/**
+ * Drilled plate: rectangular plate with a grid of through holes, cut with a
+ * parametric boolean (Group.meshCombine = difference). The hole extrusion is
+ * symmetric about z=0 so its faces pierce both plate faces without becoming
+ * coplanar with them.
+ */
+function drilledPlate(p = {}) {
+  const { w = 60, h = 40, thickness = 8, holeD = 6, margin = 7, nHolesX = 2, nHolesY = 2 } = p;
+  if (nHolesX < 1 || nHolesY < 1) throw new Error("drilledPlate: nHolesX/nHolesY must be >= 1");
+  const holes = [];
+  for (let i = 0; i < nHolesX; i++) {
+    for (let j = 0; j < nHolesY; j++) {
+      const x = nHolesX === 1 ? w / 2 : margin + (i * (w - 2 * margin)) / (nHolesX - 1);
+      const y = nHolesY === 1 ? h / 2 : margin + (j * (h - 2 * margin)) / (nHolesY - 1);
+      holes.push({ id: `h${i}_${j}`, type: "circle", center: [x, y], r: "holeD / 2" });
+    }
+  }
+  return {
+    name: "drilled_plate",
+    params: { w, h, thickness, holeD, margin, nHolesX, nHolesY },
+    sketches: [
+      {
+        name: "profile", plane: "XY",
+        entities: [
+          { id: "a", type: "line", a: [0, 0], b: ["w", 0] },
+          { id: "b", type: "line", a: ["w", 0], b: ["w", "h"] },
+          { id: "c", type: "line", a: ["w", "h"], b: [0, "h"] },
+          { id: "d", type: "line", a: [0, "h"], b: [0, 0] },
+        ],
+      },
+      { name: "holes", plane: "XY", entities: holes },
+    ],
+    operations: [
+      { type: "extrude", from: "profile", vector: [0, 0, "thickness"], name: "body" },
+      {
+        type: "extrude",
+        from: "holes",
+        vector: [0, 0, "thickness * 2 + 4"],
+        symmetric: true,
+        combine: "difference",
+        name: "holes",
+      },
+    ],
+  };
+}
+
+module.exports = { flange, lBracket, tube, pulley, spring, plateSlot, hexNut, cone, drilledPlate, buildSlvs };
 
 // --- registry for list_parts / create_part ---
 const PART_REGISTRY = {
@@ -357,6 +403,22 @@ const PART_REGISTRY = {
       topR: { default: 8, min: 0, max: 400, desc: "Top radius (mm)" },
       height: { default: 30, min: 1, max: 500, desc: "Height (mm)" },
       wall: { default: 0, min: 0, max: 100, desc: "Wall thickness (mm, 0 = solid)" },
+    },
+  },
+  drilledPlate: {
+    fn: drilledPlate,
+    title: "Drilled Plate",
+    description:
+      "Rectangular plate with a grid of through holes cut by a boolean " +
+      "(combine=difference, symmetric extrusion).",
+    params: {
+      w: { default: 60, min: 10, max: 500, desc: "Width (mm)" },
+      h: { default: 40, min: 10, max: 500, desc: "Height (mm)" },
+      thickness: { default: 8, min: 0.5, max: 100, desc: "Plate thickness (mm)" },
+      holeD: { default: 6, min: 0.5, max: 100, desc: "Hole diameter (mm)" },
+      margin: { default: 7, min: 0.5, max: 250, desc: "Hole center offset from edges (mm)" },
+      nHolesX: { default: 2, min: 1, max: 20, desc: "Holes along X" },
+      nHolesY: { default: 2, min: 1, max: 20, desc: "Holes along Y" },
     },
   },
 };

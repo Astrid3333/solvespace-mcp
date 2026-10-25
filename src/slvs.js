@@ -37,6 +37,19 @@ const GRP = {
   TRANSLATE: 5201,
 };
 
+// Group::CombineAs codes (sketch.h): boolean operation of a solid group
+// against the running shell of all previous solid groups (Group.meshCombine).
+// Default when omitted = 0 = union (file.cpp loads into `Group g = {}`).
+const MESH_COMBINE = {
+  union: 0,
+  difference: 1,
+  assemble: 2,
+  intersection: 3,
+};
+
+// Solid-generating group types: the ones whose meshCombine does the boolean.
+const SOLID_OPS = ["extrude", "lathe", "revolve", "helix"];
+
 // Constraint type codes
 const CON = {
   POINTS_COINCIDENT: 20,
@@ -430,6 +443,35 @@ function buildSlvs(model) {
     const fields = [
       ["Group.opA.v", hex8(srcGroup)],
     ];
+    // Boolean combination against the previous solids (see MESH_COMBINE).
+    // SolveSpace applies meshCombine of the *generating* group (extrude and
+    // friends); step-and-repeat groups inherit it from their source group, so
+    // reject it there instead of silently ignoring it.
+    let subtypeValue = 7000; // Subtype::ONE_SIDED
+    if (op.combine !== undefined) {
+      const key = String(op.combine).toLowerCase();
+      if (!(key in MESH_COMBINE)) {
+        throw new Error(
+          `${op.type}: unknown combine "${op.combine}" (use union|difference|assemble|intersection)`
+        );
+      }
+      if (!SOLID_OPS.includes(op.type)) {
+        throw new Error(
+          `${op.type}: combine belongs on the source solid op ` +
+            `(set combine on the ${op.type === "translate" || op.type === "rotate" ? "extrude/lathe/revolve/helix" : "solid"} it copies)`
+        );
+      }
+      fields.push(["Group.meshCombine", MESH_COMBINE[key]]);
+    }
+    if (op.symmetric) {
+      // Subtype::TWO_SIDED: solid spans -v/2..+v/2 around the sketch plane
+      // (group.cpp: ai=-1, af=1), so it pierces in both directions and the
+      // cut faces are never coplanar with the base solid's faces.
+      if (!SOLID_OPS.includes(op.type)) {
+        throw new Error(`${op.type}: symmetric is only valid on solid ops (${SOLID_OPS.join(", ")})`);
+      }
+      subtypeValue = 7001;
+    }
     let extraParams = [];
     // SolveSpace's ONE_SIDED ops apply the stored vector * timesApplied, and
     // timesApplied doubles per step (a*2), so the stored magnitude is HALF the
@@ -487,7 +529,7 @@ function buildSlvs(model) {
       case "extrude": {
         const v = vec3(op.vector ?? [0, 0, 10], "extrude.vector").map((x) => x / 2);
         groups.push({ h: g, type: GRP.EXTRUDE, order: g - 1, name: op.name || `extrude-${g}`,
-          fields: [...fields, ["Group.subtype", 7000], ["Group.predef.entityB.v", hex8(0x80000000 | (srcGroup << 16))]] });
+          fields: [...fields, ["Group.subtype", subtypeValue], ["Group.predef.entityB.v", hex8(0x80000000 | (srcGroup << 16))]] });
         extraParams = [[groupParamHandle(g, 0), v[0]], [groupParamHandle(g, 1), v[1]], [groupParamHandle(g, 2), v[2]]];
         break;
       }
@@ -528,7 +570,7 @@ function buildSlvs(model) {
         // (group.cpp GenerateShellAndMesh LATHE branch); no group params.
         const { originEntity, entityB } = rotateFrame;
         groups.push({ h: g, type: GRP.LATHE, order: g - 1, name: op.name || `lathe-${g}`,
-          fields: [...fields, ["Group.subtype", 7000],
+          fields: [...fields, ["Group.subtype", subtypeValue],
             ["Group.predef.origin.v", hex8(originEntity)],
             ["Group.predef.entityB.v", hex8(entityB)]] });
         break;
@@ -541,7 +583,7 @@ function buildSlvs(model) {
         const { originEntity, entityB, c, axis } = rotateFrame;
         const ang = ((resolve(op.angleDeg ?? 360) * Math.PI) / 180) / 4;
         groups.push({ h: g, type: GRP.REVOLVE, order: g - 1, name: op.name || `revolve-${g}`,
-          fields: [...fields, ["Group.subtype", 7000], ["Group.valA", fmtF(2)],
+          fields: [...fields, ["Group.subtype", subtypeValue], ["Group.valA", fmtF(2)],
             ["Group.predef.origin.v", hex8(originEntity)],
             ["Group.predef.entityB.v", hex8(entityB)]] });
         extraParams = [
@@ -566,7 +608,7 @@ function buildSlvs(model) {
         const pitch = op.pitch != null ? resolve(op.pitch) : 0;
         const dist = op.distance != null ? resolve(op.distance) / 2 : 0;
         groups.push({ h: g, type: GRP.HELIX, order: g - 1, name: op.name || `helix-${g}`,
-          fields: [...fields, ["Group.subtype", 7000], ["Group.valA", fmtF(2)],
+          fields: [...fields, ["Group.subtype", subtypeValue], ["Group.valA", fmtF(2)],
             ["Group.valB", fmtF(pitch)],
             ["Group.predef.origin.v", hex8(originEntity)],
             ["Group.predef.entityB.v", hex8(entityB)]] });

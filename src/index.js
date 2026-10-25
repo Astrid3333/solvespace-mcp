@@ -49,7 +49,11 @@ const modelSpecSchema = z.object({
   constraints: z.array(z.any()).optional()
     .describe("Constraints: {type:'coincident'|'distance'|..., entities:[...], ...}"),
   operations: z.array(z.any()).optional()
-    .describe("Operations: {type:'extrude'|'translate'|'rotate'|'lathe'|'revolve'|'helix', from:'sketchName', vector/angleDeg/copies, center+axis for rotation family, distance/pitch for helix}"),
+    .describe("Operations: {type:'extrude'|'translate'|'rotate'|'lathe'|'revolve'|'helix', from:'sketchName', " +
+      "vector/angleDeg/copies, center+axis for rotation family, distance/pitch for helix; " +
+      "solid ops also accept combine:'union'|'difference'|'assemble'|'intersection' (boolean vs previous solids, default 'union') " +
+      "and symmetric:true (extrude spans -v/2..+v/2 around the sketch plane, pierces both sides). " +
+      "Put the difference op LAST: the exported solid is the last group. combine/symmetric are invalid on translate/rotate.)"),
 });
 
 const exportFormat = z.enum(["stl", "svg"]);
@@ -62,7 +66,8 @@ server.registerTool(
     description:
       "Build a parametric CAD model from a JSON spec and write it as a SolveSpace .slvs file. " +
       "Spec: {params:{name:number|expr}, sketches:[{name, plane, entities:[line|circle|arc|point]}], " +
-      "constraints:[...], operations:[{type:extrude|translate|rotate|lathe|revolve|helix, from, vector|angleDeg|center+axis|distance|pitch, copies}]}. " +
+      "constraints:[...], operations:[{type:extrude|translate|rotate|lathe|revolve|helix, from, vector|angleDeg|center+axis|distance|pitch, copies, " +
+      "combine:'union'|'difference'|'assemble'|'intersection' (boolean, on solid ops only), symmetric:true (two-sided extrusion)}]}. " +
       "Returns the .slvs path plus counts. Use export_model afterwards to get STL/PNG/SVG, " +
       "or model_to_stl for both steps at once.",
     inputSchema: {
