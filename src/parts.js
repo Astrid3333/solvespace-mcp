@@ -56,30 +56,34 @@ function flange(p = {}) {
   const R = outerD / 2, bore = boreD / 2, bcd = boltCircleD / 2, br = boltD / 2;
   const n = Math.max(3, Math.round(nBolts));
   const params = { R, bore, bcd, br, thickness, n };
-  const entities = [
-    { id: "outer", type: "circle", center: [0, 0], r: "R" },
-    { id: "bore", type: "circle", center: [0, 0], r: "bore" },
-  ];
-  // bolt holes: position via sin/cos of k*tau/n
-  for (let k = 0; k < n; k++) {
-    entities.push({
-      id: `b${k}`, type: "circle",
-      center: [`bcd * cos(k * tau / n)`, `bcd * sin(k * tau / n)`],
-      r: "br",
-    });
-    // inject k as a per-entity var: we encode it by pre-resolving in JS
-  }
-  // sin/cos need numeric k; rewrite centers with concrete k values
+  // Single-sketch CSG leaves tessellation artifacts (naked edges); cut the
+  // bore + bolt holes with a symmetric difference instead (watertight).
+  const holes = [{ id: "bore", type: "circle", center: [0, 0], r: "bore" }];
   for (let k = 0; k < n; k++) {
     const ang = (k * 2 * Math.PI) / n;
-    entities[2 + k].center = [`bcd * ${Math.cos(ang)}`, `bcd * ${Math.sin(ang)}`];
+    holes.push({
+      id: `b${k}`, type: "circle",
+      center: [`bcd * ${Math.cos(ang)}`, `bcd * ${Math.sin(ang)}`],
+      r: "br",
+    });
   }
   return {
     name: "flange",
     params,
-    sketches: [{ name: "profile", plane: "XY", entities }],
+    sketches: [
+      { name: "profile", plane: "XY", entities: [{ id: "outer", type: "circle", center: [0, 0], r: "R" }] },
+      { name: "holes", plane: "XY", entities: holes },
+    ],
     operations: [
       { type: "extrude", from: "profile", vector: [0, 0, "thickness"], name: "solid" },
+      {
+        type: "extrude",
+        from: "holes",
+        vector: [0, 0, "thickness * 2 + 4"],
+        symmetric: true,
+        combine: "difference",
+        name: "bore+bolts",
+      },
     ],
   };
 }

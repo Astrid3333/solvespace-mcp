@@ -340,20 +340,22 @@ function run() {
     assert.ok(/closed=true/.test(measText), "cube mesh is closed");
     console.log("measure_model cube ok: volume ~2400, closed=true");
 
-    // ---- measure_model: flange has volume + reasonable mesh ----
-    // SolveSpace CSG tessellation of circular features leaves some naked edges
-    // (not watertight); check the volume is right and mesh is not broken.
+    // ---- measure_model: flange has volume + watertight mesh ----
+    // Since the boolean rewrite, bore+bolts are cut via symmetric difference,
+    // so the mesh must be fully watertight (nakedEdges=0), not just bounded.
     const measF = await rpc("tools/call", {
       name: "measure_model", arguments: { stl_path: p2sStl },
     });
     assert.ok(!measF.result.isError, "measure_model flange succeeds");
     const measFText = measF.result.content[0].text;
     const fVol = parseFloat(measFText.match(/volume=([\d.+-]+)/)[1]);
-    // Expected volume ~60.5 cm^3 (plate minus bore minus bolt holes)
-    assert.ok(fVol > 50000 && fVol < 70000, `flange volume in 50-70k range, got ${fVol}`);
+    // Expected volume ~61261 mm^3 (plate minus bore minus 6 bolt holes), less
+    // with inscribed-circle tessellation
+    assert.ok(fVol > 58000 && fVol < 62000, `flange volume near 61261, got ${fVol}`);
     const fNaked = parseInt(measFText.match(/nakedEdges=(\d+)/)[1], 10);
-    assert.ok(fNaked < 100, `flange nakedEdges bounded (<100), got ${fNaked}`);
-    console.log(`measure_model flange ok: volume ~${fVol.toFixed(0)}, nakedEdges=${fNaked}`);
+    assert.ok(fNaked === 0, `flange watertight (nakedEdges=0), got ${fNaked}`);
+    assert.ok(/closed=true/.test(measFText), "flange closed=true");
+    console.log(`measure_model flange ok: volume ~${fVol.toFixed(0)}, nakedEdges=${fNaked}, closed=true`);
 
     // ---- export_png: render flange ----
     const png = await rpc("tools/call", {

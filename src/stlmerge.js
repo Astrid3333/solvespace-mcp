@@ -4,7 +4,7 @@
 // writes a single binary STL.
 
 const fs = require("node:fs");
-const { readStlTris } = require("./measure");
+const { readStlTris, weldPoint } = require("./measure");
 
 function rotMatrix(rx, ry, rz) {
   // degrees → radians, XYZ order (apply X, then Y, then Z)
@@ -28,10 +28,10 @@ function applyTransform(p, R, t) {
   ];
 }
 
-function writeBinaryStl(tris, file) {
+function writeBinaryStl(tris, file, header = "solvespace-mcp assemble") {
   const n = tris.length;
   const buf = Buffer.alloc(84 + n * 50);
-  buf.write("solvespace-mcp assemble", 0, "ascii");
+  buf.write(header, 0, "ascii");
   buf.writeUInt32LE(n, 80);
   for (let i = 0; i < n; i++) {
     const off = 84 + i * 50;
@@ -52,6 +52,27 @@ function writeBinaryStl(tris, file) {
   }
   fs.writeFileSync(file, buf);
   return { triangles: n };
+}
+
+/**
+ * Weld float-noise vertices in an STL file (snap to 1e-6 grid, normalize -0).
+ * Boolean ops leave sub-epsilon residues (e.g. -2e-14 vs 0) that fake open
+ * edges; welding makes shared vertices byte-identical again. Rewrites the
+ * file in place as binary STL. Returns { triangles, changed }.
+ */
+function weldStlFile(file) {
+  const tris = readStlTris(file);
+  let changed = 0;
+  const welded = tris.map((t) =>
+    t.map((p) => {
+      const w = weldPoint(p);
+      if (w[0] !== p[0] || w[1] !== p[1] || w[2] !== p[2] ||
+          Object.is(p[0], -0) || Object.is(p[1], -0) || Object.is(p[2], -0)) changed++;
+      return w;
+    })
+  );
+  if (changed) writeBinaryStl(welded, file, "solvespace-mcp weld");
+  return { triangles: welded.length, changed };
 }
 
 /**
@@ -83,4 +104,4 @@ function assembleStls(parts, outFile) {
   return { outFile, triangles: all.length, bbox: { min, max, size } };
 }
 
-module.exports = { assembleStls, rotMatrix, applyTransform };
+module.exports = { assembleStls, rotMatrix, applyTransform, writeBinaryStl, weldStlFile };

@@ -89,8 +89,18 @@ function exportMesh({ slvsFile, outFile, chordTolerance, bin, timeout }) {
   if (!fs.existsSync(outFile)) {
     throw new Error(`export-mesh produced no file at ${outFile}\n${output}`);
   }
+  // Weld float-noise vertices (boolean ops leave -2e-14-style residues that
+  // fake open edges in any edge-count watertightness check).
+  let welded = null;
+  try {
+    const { weldStlFile } = require("./stlmerge.js");
+    welded = weldStlFile(outFile);
+  } catch (e) {
+    // welding is best-effort: keep the original STL if anything goes wrong
+    welded = { error: e.message };
+  }
   const stats = parseBinaryStl(outFile);
-  return { outFile, ...stats, cliOutput: output.trim() };
+  return { outFile, ...stats, welded, cliOutput: output.trim() };
 }
 
 function exportView({ slvsFile, outFile, view, chordTolerance, bin, timeout }) {

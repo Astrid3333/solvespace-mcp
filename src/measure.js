@@ -71,6 +71,17 @@ function norm(a) {
   return Math.hypot(a[0], a[1], a[2]);
 }
 
+// Weld tolerance: coordinates snapped to this grid (and -0 normalized) so that
+// float noise from boolean ops (e.g. -2e-14 vs 0) does not fake open edges.
+const WELD_EPS = 1e-6;
+function weldCoord(v) {
+  return Math.round(v / WELD_EPS) * WELD_EPS + 0;
+}
+
+function weldPoint(p) {
+  return [weldCoord(p[0]), weldCoord(p[1]), weldCoord(p[2])];
+}
+
 /**
  * Full mesh analysis from STL file.
  * Returns { volume, surfaceArea, com:[x,y,z], triangleCount, nakedEdges, isClosed, bbox }.
@@ -110,9 +121,13 @@ function measureStl(file) {
     ? [cx / (24 * (vol6 / 6)), cy / (24 * (vol6 / 6)), cz / (24 * (vol6 / 6))]
     : [0, 0, 0];
 
-  // naked edges: count undirected edges; boundary = count === 1
+  // naked edges: count undirected edges; boundary = count === 1.
+  // Vertices are welded first so float noise cannot fake open edges.
   const edgeCount = new Map();
-  const key = (p) => `${p[0].toFixed(4)},${p[1].toFixed(4)},${p[2].toFixed(4)}`;
+  const key = (p) => {
+    const w = weldPoint(p);
+    return `${w[0].toFixed(4)},${w[1].toFixed(4)},${w[2].toFixed(4)}`;
+  };
   for (const [a, b, c] of tris) {
     for (const [u, v] of [[a, b], [b, c], [c, a]]) {
       const ku = key(u), kv = key(v);
@@ -135,4 +150,4 @@ function measureStl(file) {
   };
 }
 
-module.exports = { measureStl, readStlTris };
+module.exports = { measureStl, readStlTris, weldCoord, weldPoint, WELD_EPS };

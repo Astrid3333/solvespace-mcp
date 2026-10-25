@@ -171,12 +171,27 @@ server.registerTool(
       const r = cli.exportMesh({ slvsFile, outFile: stlFile, chordTolerance: chord_tolerance });
       if (!keep_slvs) fs.unlinkSync(slvsFile);
       const fmt3 = (a) => a.map((x) => +x.toFixed(3)).join(", ");
+      // Watertightness check: a failed boolean (Group.booleanFailed) exports
+      // a valid-looking STL with open edges; catch it here, not downstream.
+      let meshCheck = "";
+      try {
+        const m = measureStl(r.outFile);
+        meshCheck = `closed=${m.isClosed} nakedEdges=${m.nakedEdges} volume=${m.volume.toFixed(2)} mm^3\n`;
+        if (m.nakedEdges > 0) {
+          meshCheck +=
+            `WARN: mesh not watertight (nakedEdges=${m.nakedEdges}) — a boolean ` +
+            `may have failed; check combine/symmetric and op order (difference op must be LAST)\n`;
+        }
+      } catch (e) {
+        meshCheck = `WARN: mesh check failed: ${e.message}\n`;
+      }
       return {
         content: [{
           type: "text",
           text: `STL: ${r.outFile}\nslvs=${keep_slvs ? slvsFile : "(deleted)"}\n` +
             `triangles=${r.triangles}\nsize=(${fmt3(r.size)}) mm\n` +
-            `bbox min=(${fmt3(r.min)}) max=(${fmt3(r.max)})`,
+            `bbox min=(${fmt3(r.min)}) max=(${fmt3(r.max)})\n` +
+            meshCheck,
         }],
       };
     } catch (e) {
