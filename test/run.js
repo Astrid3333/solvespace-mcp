@@ -489,6 +489,27 @@ function run() {
     assert.ok(/closed=true/.test(gMText), "gear mesh closed");
     console.log(`gear ok: 52x52x8, volume ~${gVol.toFixed(0)}, nakedEdges=0, closed=true`);
 
+    // ---- gear: kidney slots must not overlap (N=32, 6 spokes) ----
+    // span+caps exceed the 60deg spacing -> loops overlap -> SolveSpace's
+    // boolean fails silently and exports a solid disc (vol 25409, no bore).
+    const g32 = await rpc("tools/call", {
+      name: "part_to_stl",
+      arguments: {
+        part: "gear",
+        params: { teeth: 32, module: 2, thickness: 8, boreD: 12, hubD: 30, rimW: 5, nSpokes: 6, nRivets: 8, rivetD: 4 },
+      },
+    });
+    assert.ok(!g32.result.isError, "part_to_stl gear N=32 6-spoke succeeds: " + JSON.stringify(g32.result));
+    const g32M = await rpc("tools/call", { name: "measure_model", arguments: { stl_path: g32.result.content[0].text.match(/STL: (\S+)/)[1] } });
+    const g32Text = g32M.result.content[0].text;
+    const g32Vol = parseFloat(g32Text.match(/volume=([\d.+-]+)/)[1]);
+    const g32Naked = parseInt(g32Text.match(/nakedEdges=(\d+)/)[1], 10);
+    // solid disc = 25409; bore + 6 slots + 8 rivets remove ~8700 -> ~16700.
+    assert.ok(g32Vol > 13000 && g32Vol < 22000,
+      `gear N=32 6-spoke cuts applied, volume in [13000,22000] (solid disc would be 25409), got ${g32Vol}`);
+    assert.strictEqual(g32Naked, 0, `gear N=32 watertight, nakedEdges=0, got ${g32Naked}`);
+    console.log(`gear overlap regression ok: N=32 6-spoke volume ~${g32Vol.toFixed(0)} (solid would be 25409)`);
+
     // ---- batch_parts: 2 gear variants ----
     const gB = await rpc("tools/call", {
       name: "batch_parts",

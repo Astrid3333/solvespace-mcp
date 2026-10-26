@@ -380,38 +380,46 @@ function gear(p = {}) {
   if (nS > 0 && ro - ri >= 2) {
     const rmid = (ri + ro) / 2;
     const rc = (ro - ri) / 2;  // cap radius
-    const span = (40 * Math.PI) / 180; // angular span of slot body
-    const capP = (C, er, et, bulge, psi) => [
-      C[0] + rc * (Math.cos(psi) * er[0] + bulge * Math.sin(psi) * et[0]),
-      C[1] + rc * (Math.cos(psi) * er[1] + bulge * Math.sin(psi) * et[1]),
-    ];
-    for (let s = 0; s < nS; s++) {
-      const a0 = (s * 2 * Math.PI) / nS;
-      const t1 = a0 - span / 2, t2 = a0 + span / 2;
-      const kp = [];
-      for (let i = 0; i <= 6; i++) { // outer arc t1 -> t2
-        const a = t1 + (span * i) / 6;
-        kp.push([ro * Math.cos(a), ro * Math.sin(a)]);
+    // Each end cap bulges tangentially by rc (~atan(rc/rmid) rad per side);
+    // if span + caps exceed the spacing between slots the loops overlap and
+    // SolveSpace's boolean fails silently, exporting a solid disc.
+    const spacing = (2 * Math.PI) / nS;
+    const capAng = Math.atan2(rc, rmid);
+    const minSep = 1.5 / rmid; // >=1.5 mm between adjacent slot tips
+    const span = Math.min((40 * Math.PI) / 180, spacing - 2 * capAng - minSep);
+    if (span > (8 * Math.PI) / 180) {
+      const capP = (C, er, et, bulge, psi) => [
+        C[0] + rc * (Math.cos(psi) * er[0] + bulge * Math.sin(psi) * et[0]),
+        C[1] + rc * (Math.cos(psi) * er[1] + bulge * Math.sin(psi) * et[1]),
+      ];
+      for (let s = 0; s < nS; s++) {
+        const a0 = (s * 2 * Math.PI) / nS;
+        const t1 = a0 - span / 2, t2 = a0 + span / 2;
+        const kp = [];
+        for (let i = 0; i <= 6; i++) { // outer arc t1 -> t2
+          const a = t1 + (span * i) / 6;
+          kp.push([ro * Math.cos(a), ro * Math.sin(a)]);
+        }
+        // end cap at t2: semicircle center on rmid, bulging toward +angle
+        {
+          const er = [Math.cos(t2), Math.sin(t2)];
+          const et = [-Math.sin(t2), Math.cos(t2)];
+          const C = [rmid * er[0], rmid * er[1]];
+          for (let i = 1; i <= 3; i++) kp.push(capP(C, er, et, 1, (Math.PI * i) / 4));
+        }
+        for (let i = 6; i >= 0; i--) { // inner arc t2 -> t1
+          const a = t1 + (span * i) / 6;
+          kp.push([ri * Math.cos(a), ri * Math.sin(a)]);
+        }
+        // start cap at t1: from psi=pi (inner) back to psi=0 (outer), bulge -angle
+        {
+          const er = [Math.cos(t1), Math.sin(t1)];
+          const et = [-Math.sin(t1), Math.cos(t1)];
+          const C = [rmid * er[0], rmid * er[1]];
+          for (let i = 3; i >= 1; i--) kp.push(capP(C, er, et, -1, (Math.PI * i) / 4));
+        }
+        cuts.push(...polygonLines(kp, `s${s}_`));
       }
-      // end cap at t2: semicircle center on rmid, bulging toward +angle
-      {
-        const er = [Math.cos(t2), Math.sin(t2)];
-        const et = [-Math.sin(t2), Math.cos(t2)];
-        const C = [rmid * er[0], rmid * er[1]];
-        for (let i = 1; i <= 3; i++) kp.push(capP(C, er, et, 1, (Math.PI * i) / 4));
-      }
-      for (let i = 6; i >= 0; i--) { // inner arc t2 -> t1
-        const a = t1 + (span * i) / 6;
-        kp.push([ri * Math.cos(a), ri * Math.sin(a)]);
-      }
-      // start cap at t1: from psi=pi (inner) back to psi=0 (outer), bulge -angle
-      {
-        const er = [Math.cos(t1), Math.sin(t1)];
-        const et = [-Math.sin(t1), Math.cos(t1)];
-        const C = [rmid * er[0], rmid * er[1]];
-        for (let i = 3; i >= 1; i--) kp.push(capP(C, er, et, -1, (Math.PI * i) / 4));
-      }
-      cuts.push(...polygonLines(kp, `s${s}_`));
     }
   }
   const nR = Math.max(0, Math.round(nRivets));
