@@ -8,6 +8,8 @@ const assert = require("node:assert");
 
 const ROOT = path.join(__dirname, "..");
 const SERVER = path.join(ROOT, "src", "index.js");
+const { readStlTris, measureStl } = require(path.join(ROOT, "src", "measure.js"));
+const { writeBinaryStl } = require(path.join(ROOT, "src", "stlmerge.js"));
 
 function readStlSize(file) {
   const buf = fs.readFileSync(file);
@@ -576,6 +578,39 @@ function run() {
     const badR = await rpc("tools/call", { name: "model_to_stl", arguments: { spec: badSpec } });
     assert.ok(badR.result.isError, "combine on translate rejected");
     console.log("boolean validation ok: combine on translate rejected");
+
+    // ---- repair_stl: cap a dropped-triangle hole back to watertight ----
+    const boxTris = readStlTris(stlFile);
+    assert.strictEqual(boxTris.length, 12, "box still has 12 triangles");
+    const holeStl = path.join(ROOT, "build", "repair_hole.stl");
+    fs.mkdirSync(path.join(ROOT, "build"), { recursive: true });
+    writeBinaryStl(boxTris.slice(0, -1), holeStl, "test hole");
+    const holeM = measureStl(holeStl);
+    assert.strictEqual(holeM.nakedEdges, 3, "dropped triangle leaves 3 naked edges");
+    assert.strictEqual(holeM.isClosed, false, "hole mesh is open");
+    const repR = await rpc("tools/call", {
+      name: "repair_stl", arguments: { stl_path: holeStl },
+    });
+    assert.ok(!repR.result.isError, "repair_stl succeeds: " + JSON.stringify(repR.result));
+    const repText = repR.result.content[0].text;
+    console.log("repair_stl:\n" + repText);
+    assert.ok(/capped=1/.test(repText), "one loop capped");
+    assert.ok(/uncapped=0/.test(repText), "no open chains");
+    const repOut = repText.match(/STL: (\S+)/);
+    assert.ok(repOut, "output path reported");
+    const repM = measureStl(repOut[1]);
+    assert.strictEqual(repM.nakedEdges, 0, "repaired mesh watertight");
+    assert.strictEqual(repM.isClosed, true, "repaired closed=true");
+    assert.strictEqual(repM.triangleCount, 14, "11 input + 3 cap triangles");
+    assert.ok(Math.abs(repM.volume - 2400) < 0.5,
+      `repaired volume ~2400, got ${repM.volume}`);
+    console.log(`repair_stl ok: naked 3->0, 12-1+3=14 tris, vol ${repM.volume.toFixed(1)}`);
+
+    // repair on an already-watertight mesh: reports, does not write
+    const rep2 = await rpc("tools/call", { name: "repair_stl", arguments: { stl_path: stlFile } });
+    assert.ok(!rep2.result.isError, "repair_stl on closed mesh succeeds");
+    assert.ok(/already watertight/.test(rep2.result.content[0].text), "closed mesh reported as-is");
+    console.log("repair_stl on closed mesh ok: already watertight");
 
     // ---- open_in_gui: returns pid ----
     const gui = await rpc("tools/call", {

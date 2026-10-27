@@ -8,8 +8,9 @@ solid operations — and export STL / SVG / PNG without opening the GUI.
 JSON spec  ->  .slvs (SolveSpace source)  ->  solvespace-cli  ->  STL / SVG / PNG
 ```
 
-- 14 MCP tools, 10 ready-made parametric parts, boolean ops (union /
-  difference / intersection), watertight-mesh validation on export.
+- 15 MCP tools, 10 ready-made parametric parts, boolean ops (union /
+  difference / intersection), watertight-mesh validation on export, and hole
+  capping (`repair_stl`).
 - Units are **millimetres** everywhere.
 
 ## Requirements
@@ -52,6 +53,7 @@ Register in `opencode.json`:
 | `export_format` | `.slvs` -> obj / svg / dxf / step / pdf / … via CLI `export-view`/`export-mesh` |
 | `section_view` | cut an STL with a plane, export the profile as SVG |
 | `measure_model` | STL volume, area, center of mass, naked-edge (watertightness) check |
+| `repair_stl` | cap the holes of a non-watertight STL (centroid fan per boundary loop) |
 | `create_part` | library part -> `.slvs` |
 | `part_to_stl` | library part -> STL in one step |
 | `batch_parts` | same part, N parameter sets, one call |
@@ -128,19 +130,20 @@ npm test
 ```
 
 End-to-end over stdio: tool listing, specs, booleans, library parts,
-determinism, measurements, exports. Asserts watertightness
-(`nakedEdges=0 closed=true`) on every boolean part.
+determinism, measurements, exports, mesh repair. Asserts watertightness
+(`nakedEdges=0 closed=true`) on every boolean part and on `repair_stl` output.
 
 ## Repo layout
 
 ```
-src/index.js     MCP server, 14 tool registrations
+src/index.js     MCP server, 15 tool registrations
 src/slvs.js      JSON spec -> .slvs binary writer
 src/parts.js     10 parametric part generators
 src/cli.js       solvespace-cli wrappers (export/render, -t tolerance)
 src/measure.js   STL reader + volume/area/watertightness (weld at 1e-6)
 src/stlmerge.js  STL merge with transforms, weld, binary writer
 src/section.js   plane-cut cross-section -> SVG
+src/repair.js    boundary-loop detection + hole capping (watertight fix)
 test/run.js      E2E suite (node test/run.js)
 build/           generated .slvs/.stl (gitignored)
 ```

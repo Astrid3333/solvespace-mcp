@@ -16,6 +16,7 @@ const { PART_REGISTRY, partNames } = require("./parts.js");
 const { measureStl } = require("./measure.js");
 const { assembleStls } = require("./stlmerge.js");
 const { sectionStl } = require("./section.js");
+const { repairStl } = require("./repair.js");
 
 const BUILD_DIR = path.join(os.homedir(), "solvespace-mcp", "build");
 
@@ -412,6 +413,70 @@ server.registerTool(
       };
     } catch (e) {
       return { content: [{ type: "text", text: `measure failed: ${e.message}` }], isError: true };
+    }
+  }
+);
+
+server.registerTool(
+  "repair_stl",
+  {
+    title: "Repair STL (cap holes)",
+    description:
+      "Find naked (boundary) edges in a non-watertight STL and cap every closed " +
+      "boundary loop with a centroid triangle fan, producing a watertight mesh. " +
+      "Reports before/after nakedEdges, capped vs uncapped (open) loops, and the " +
+      "planarity deviation (mm) of each capped loop so you can judge the patch. " +
+      "Already-watertight meshes are reported without writing an output file.",
+    inputSchema: {
+      stl_path: z.string().describe("Path to the STL file to repair"),
+      out_path: z
+        .string()
+        .optional()
+        .describe("Output path (default: <input>_repaired.stl next to the input)"),
+    },
+  },
+  async ({ stl_path, out_path }) => {
+    const f = path.resolve(stl_path);
+    if (!fs.existsSync(f)) {
+      return { content: [{ type: "text", text: `File not found: ${f}` }], isError: true };
+    }
+    try {
+      const out = out_path
+        ? ensureParent(path.resolve(out_path))
+        : f.replace(/\.stl$/i, "") + "_repaired.stl";
+      const r = repairStl(f, out);
+      const fmt = (x) => +x.toFixed(6);
+      if (r.alreadyWatertight) {
+        return {
+          content: [{
+            type: "text",
+            text: `STL: ${f}\n` +
+              `already watertight (triangles=${r.input.triangles} nakedEdges=0) — nothing to repair`,
+          }],
+        };
+      }
+      const lines = [
+        `input: ${f}`,
+        `input: triangles=${r.input.triangles} nakedEdges=${r.input.nakedEdges}`,
+        `loops: found=${r.loops} capped=${r.capped} uncapped=${r.uncapped} ` +
+          `uncappedEdges=${r.uncappedEdges} degenerate=${r.degenerate}`,
+        `cap: +${r.addedTriangles} triangles, planarity deviation (mm)=${r.deviationsMm.map(fmt).join(", ") || "n/a"}`,
+      ];
+      if (r.output) {
+        lines.push(`STL: ${r.output.path}`);
+        lines.push(
+          `output: triangles=${r.output.triangles} nakedEdges=${r.output.nakedEdges} ` +
+          `closed=${r.output.isClosed}`
+        );
+      }
+      if (r.uncappedEdges) {
+        lines.push(`WARN: ${r.uncapped} open boundary chain(s) not capped (open sheet, not a hole)`);
+      }
+      if (r.degenerate) lines.push(`WARN: ${r.degenerate} zero-length naked edge(s) not fixable by capping`);
+      if (r.output && !r.output.isClosed) lines.push("WARN: mesh still not watertight after repair");
+      return { content: [{ type: "text", text: lines.join("\n") }] };
+    } catch (e) {
+      return { content: [{ type: "text", text: `repair failed: ${e.message}` }], isError: true };
     }
   }
 );
