@@ -12,6 +12,7 @@ JSON spec  ->  .slvs (SolveSpace source)  ->  solvespace-cli  ->  STL / SVG / PN
   difference / intersection), watertight-mesh validation on export, and hole
   capping (`repair_stl`).
 - Units are **millimetres** everywhere.
+- Current release: **v1.0.0** — see [CHANGELOG.md](CHANGELOG.md).
 
 ## Requirements
 
