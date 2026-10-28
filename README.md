@@ -54,7 +54,7 @@ Register in `opencode.json`:
 | `export_format` | `.slvs` -> obj / svg / dxf / step / pdf / … via CLI `export-view`/`export-mesh` |
 | `section_view` | cut an STL with a plane, export the profile as SVG |
 | `measure_model` | STL volume, area, center of mass, naked-edge (watertightness) check |
-| `repair_stl` | cap the holes of a non-watertight STL (centroid fan per boundary loop) |
+| `repair_stl` | cap the holes of a non-watertight STL (ear-clipping per boundary loop, centroid fan fallback) |
 | `create_part` | library part -> `.slvs` |
 | `part_to_stl` | library part -> STL in one step |
 | `batch_parts` | same part, N parameter sets, one call |

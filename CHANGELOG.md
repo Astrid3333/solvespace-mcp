@@ -4,6 +4,18 @@ Notable changes to this project are documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versioning: [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- `repair_stl` now caps concave boundary loops with a proper 2D
+  ear-clipping triangulation (per-loop plane projection) instead of a
+  centroid triangle fan; simple convex and planar cases report
+  `methods=earclip` per loop, with the centroid fan kept as an honest
+  fallback (`methods=fan`) when ear-clipping fails. Self-intersecting
+  caps on non-convex loops (e.g. a U-prism whose centroid lies outside
+  the solid) are now fixed rather than reported.
+
 ## [1.0.0] - 2026-10-27
 
 First stable release: 15 MCP tools over solvespace-cli 3.1.

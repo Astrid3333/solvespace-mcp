@@ -423,9 +423,10 @@ server.registerTool(
     title: "Repair STL (cap holes)",
     description:
       "Find naked (boundary) edges in a non-watertight STL and cap every closed " +
-      "boundary loop with a centroid triangle fan, producing a watertight mesh. " +
-      "Reports before/after nakedEdges, capped vs uncapped (open) loops, and the " +
-      "planarity deviation (mm) of each capped loop so you can judge the patch. " +
+      "boundary loop with ear-clipping triangulation (centroid fan fallback), " +
+      "producing a watertight mesh. Reports before/after nakedEdges, capped vs " +
+      "uncapped (open) loops, the per-loop method (earclip|fan), and the planarity " +
+      "deviation (mm) of each capped loop so you can judge the patch. " +
       "Already-watertight meshes are reported without writing an output file.",
     inputSchema: {
       stl_path: z.string().describe("Path to the STL file to repair"),
@@ -460,7 +461,8 @@ server.registerTool(
         `input: triangles=${r.input.triangles} nakedEdges=${r.input.nakedEdges}`,
         `loops: found=${r.loops} capped=${r.capped} uncapped=${r.uncapped} ` +
           `uncappedEdges=${r.uncappedEdges} degenerate=${r.degenerate}`,
-        `cap: +${r.addedTriangles} triangles, planarity deviation (mm)=${r.deviationsMm.map(fmt).join(", ") || "n/a"}`,
+        `cap: +${r.addedTriangles} triangles, methods=${r.methods.join(",") || "n/a"}, ` +
+          `planarity deviation (mm)=${r.deviationsMm.map(fmt).join(", ") || "n/a"}`,
       ];
       if (r.output) {
         lines.push(`STL: ${r.output.path}`);

@@ -601,16 +601,56 @@ function run() {
     const repM = measureStl(repOut[1]);
     assert.strictEqual(repM.nakedEdges, 0, "repaired mesh watertight");
     assert.strictEqual(repM.isClosed, true, "repaired closed=true");
-    assert.strictEqual(repM.triangleCount, 14, "11 input + 3 cap triangles");
+    assert.strictEqual(repM.triangleCount, 12, "11 input + 1 earclip cap triangle");
     assert.ok(Math.abs(repM.volume - 2400) < 0.5,
       `repaired volume ~2400, got ${repM.volume}`);
-    console.log(`repair_stl ok: naked 3->0, 12-1+3=14 tris, vol ${repM.volume.toFixed(1)}`);
+    assert.ok(/methods=earclip/.test(repText), "earclip used for triangular loop");
+    console.log(`repair_stl ok: naked 3->0, 11+1=12 tris (earclip), vol ${repM.volume.toFixed(1)}`);
 
     // repair on an already-watertight mesh: reports, does not write
     const rep2 = await rpc("tools/call", { name: "repair_stl", arguments: { stl_path: stlFile } });
     assert.ok(!rep2.result.isError, "repair_stl on closed mesh succeeds");
     assert.ok(/already watertight/.test(rep2.result.content[0].text), "closed mesh reported as-is");
     console.log("repair_stl on closed mesh ok: already watertight");
+
+    // ---- repair_stl: real polygon cap on a concave U prism (ear-clipping) ----
+    // Profile (CCW): U-shape. Centroid (5,5.75) lies OUTSIDE the solid —
+    // a centroid fan would self-intersect; ear-clipping must produce a
+    // valid simple polygon cap for both open ends (top and bottom).
+    const prof = [
+      [0, 0], [10, 0], [10, 10], [7, 10],
+      [7, 3], [3, 3], [3, 10], [0, 10],
+    ];
+    const H = 10;
+    const bot = prof.map(([x, y]) => [x, y, 0]);
+    const top = prof.map(([x, y]) => [x, y, H]);
+    const wallTris = [];
+    for (let i = 0; i < prof.length; i++) {
+      const j = (i + 1) % prof.length;
+      // wall quad (bot[i], bot[j], top[j], top[i]) as two triangles
+      wallTris.push([bot[i], bot[j], top[j]]);
+      wallTris.push([bot[i], top[j], top[i]]);
+    }
+    const uPath = path.join(ROOT, "build", "repair_u.stl");
+    writeBinaryStl(wallTris, uPath);
+    const uOpen = measureStl(uPath);
+    assert.strictEqual(uOpen.triangleCount, 16, "U prism walls: 16 tris");
+    assert.strictEqual(uOpen.nakedEdges, 16, "U prism: 16 naked (2 loops of 8)");
+    const repU = await rpc("tools/call", {
+      name: "repair_stl", arguments: { stl_path: uPath, out_path: uPath },
+    });
+    assert.ok(!repU.result.isError, "U prism repair succeeds");
+    const repUText = repU.result.content[0].text;
+    console.log("repair_stl U-prism:\n" + repUText);
+    assert.ok(/capped=2/.test(repUText), "U prism: 2 loops capped");
+    assert.ok(/uncapped=0/.test(repUText), "U prism: no uncapped chains");
+    assert.ok(/methods=earclip,earclip/.test(repUText), "U prism: earclip both loops");
+    const uM = measureStl(uPath);
+    assert.strictEqual(uM.nakedEdges, 0, "U prism: watertight after repair");
+    assert.strictEqual(uM.triangleCount, 28, "16 walls + 2×6 cap tris");
+    assert.ok(Math.abs(uM.volume - 720) < 5,
+      `U prism volume ~720, got ${uM.volume}`);
+    console.log(`repair_stl U-prism ok: earclip×2, 16+12=28 tris, vol ${uM.volume.toFixed(1)}`);
 
     // ---- open_in_gui: returns pid ----
     const gui = await rpc("tools/call", {
